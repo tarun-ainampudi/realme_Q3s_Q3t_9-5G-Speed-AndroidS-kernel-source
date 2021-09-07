@@ -80,11 +80,18 @@ jobs:
             LLVM=1 LLVM_IAS=1 \
             -j"$(nproc)"
 
+      - name: Get Kernel Version
+        id: kernel_version
+        run: |
+          VERSION=$(make "$DEFCONFIG" ARCH=arm64 kernelrelease 2>&1 | tail -n 1)
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "Kernel version: $VERSION"
+
       - name: Upload kernel artifacts
         if: success()
         uses: actions/upload-artifact@v4
         with:
-          name: RMX3461-kernel
+          name: RMX3461-Kernel-${{ steps.kernel_version.outputs.version }}
           path: |
             out/arch/arm64/boot/Image
           if-no-files-found: warn
