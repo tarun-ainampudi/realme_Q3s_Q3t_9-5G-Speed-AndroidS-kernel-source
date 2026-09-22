@@ -1,0 +1,234 @@
+diff --git a/arch/arm64/configs/vendor/lahaina-qgki_defconfig b/arch/arm64/configs/vendor/lahaina-qgki_defconfig
+index 9b471daed..e34579816 100644
+--- a/arch/arm64/configs/vendor/lahaina-qgki_defconfig
++++ b/arch/arm64/configs/vendor/lahaina-qgki_defconfig
+@@ -1051,3 +1051,6 @@ CONFIG_CORESIGHT_DUMMY=y
+ CONFIG_CORESIGHT_REMOTE_ETM=y
+ CONFIG_CORESIGHT_TGU=y
+ CONFIG_OPLUS_FEATURE_PANIC_FLUSH=y
++# ReSukiSU
++CONFIG_KSU=y
++CONFIG_KSU_MANUAL_HOOK=y
+# diff --git a/drivers/Kconfig b/drivers/Kconfig
+# index 8ac7146c6..de2374f79 100644
+# --- a/drivers/Kconfig
+# +++ b/drivers/Kconfig
+# @@ -233,4 +233,5 @@ source "drivers/counter/Kconfig"
+#  source "drivers/nfc/oplus_nfc/Kconfig"
+#  source "drivers/nfc/st21nfc-i2c/Kconfig"
+#  source "drivers/nfc/st54-spi/Kconfig"
+# +source "drivers/kernelsu/Kconfig"
+#  endmenu
+# diff --git a/drivers/Makefile b/drivers/Makefile
+# index aaef17cc6..daaf7f137 100644
+# --- a/drivers/Makefile
+# +++ b/drivers/Makefile
+# @@ -186,3 +186,5 @@ obj-$(CONFIG_SIOX)		+= siox/
+#  obj-$(CONFIG_GNSS)		+= gnss/
+#  obj-$(CONFIG_INTERCONNECT)	+= interconnect/
+#  obj-$(CONFIG_COUNTER)		+= counter/
+# +
+# +obj-$(CONFIG_KSU) += kernelsu/
+diff --git a/drivers/input/input.c b/drivers/input/input.c
+index e2eb9b9b8..725ebb9ff 100644
+--- a/drivers/input/input.c
++++ b/drivers/input/input.c
+@@ -430,11 +430,23 @@ static void input_handle_event(struct input_dev *dev,
+  * to 'seed' initial state of a switch or initial position of absolute
+  * axis, etc.
+  */
++
++#ifdef CONFIG_KSU_MANUAL_HOOK
++extern bool ksu_input_hook __read_mostly;
++extern __attribute__((cold)) int ksu_handle_input_handle_event(
++			unsigned int *type, unsigned int *code, int *value);
++#endif
++
+ void input_event(struct input_dev *dev,
+ 		 unsigned int type, unsigned int code, int value)
+ {
+ 	unsigned long flags;
+ 
++#ifdef CONFIG_KSU_MANUAL_HOOK
++	if (unlikely(ksu_input_hook))
++		ksu_handle_input_handle_event(&type, &code, &value);
++#endif
++
+ 	if (is_event_supported(type, dev->evbit, EV_MAX)) {
+ 
+ 		spin_lock_irqsave(&dev->event_lock, flags);
+diff --git a/fs/exec.c b/fs/exec.c
+index bc60507c2..eb76ea4fc 100755
+--- a/fs/exec.c
++++ b/fs/exec.c
+@@ -1897,12 +1897,33 @@ static int __do_execve_file(int fd, struct filename *filename,
+ 	return retval;
+ }
+ 
++#ifdef CONFIG_KSU_MANUAL_HOOK
++__attribute__((hot))
++extern int ksu_handle_execveat(int *fd, struct filename **filename_ptr,
++				void *argv, void *envp, int *flags);
++__attribute__((hot))
++extern int ksu_handle_post_execveat(int *fd, struct filename **filename_ptr,
++				void *argv, void *envp, int *flags, int *retval);
++#endif
++
++
+ static int do_execveat_common(int fd, struct filename *filename,
+ 			      struct user_arg_ptr argv,
+ 			      struct user_arg_ptr envp,
+ 			      int flags)
+ {
++#ifdef CONFIG_KSU_MANUAL_HOOK
++	int retval;
++	ksu_handle_execveat(&fd, &filename, &argv, &envp, &flags);
++	
++	retval = __do_execve_file(fd, filename, argv, envp, flags, NULL);
++	
++	ksu_handle_post_execveat(&fd, &filename, &argv, &envp, &flags, &retval);
++	
++	return retval;
++#else
+ 	return __do_execve_file(fd, filename, argv, envp, flags, NULL);
++#endif
+ }
+ 
+ int do_execve_file(struct file *file, void *__argv, void *__envp)
+diff --git a/fs/open.c b/fs/open.c
+index 88e42c2e8..f13a5c5b8 100644
+--- a/fs/open.c
++++ b/fs/open.c
+@@ -440,8 +440,17 @@ long do_faccessat(int dfd, const char __user *filename, int mode)
+ 	return res;
+ }
+ 
++#ifdef CONFIG_KSU_MANUAL_HOOK
++__attribute__((hot)) 
++extern int ksu_handle_faccessat(int *dfd, const char __user **filename_user,
++				int *mode, int *flags);
++#endif
++
+ SYSCALL_DEFINE3(faccessat, int, dfd, const char __user *, filename, int, mode)
+ {
++#ifdef CONFIG_KSU_MANUAL_HOOK
++	ksu_handle_faccessat(&dfd, &filename, &mode, NULL);
++#endif
+ 	return do_faccessat(dfd, filename, mode);
+ }
+ 
+diff --git a/fs/stat.c b/fs/stat.c
+index ec9220cc1..166340492 100644
+--- a/fs/stat.c
++++ b/fs/stat.c
+@@ -358,6 +358,17 @@ SYSCALL_DEFINE2(newlstat, const char __user *, filename,
+ 	return cp_new_stat(&stat, statbuf);
+ }
+ 
++#ifdef CONFIG_KSU_MANUAL_HOOK
++__attribute__((hot)) 
++extern int ksu_handle_stat(int *dfd, const char __user **filename_user,
++				int *flags);
++
++extern void ksu_handle_newfstat_ret(unsigned int *fd, struct stat __user **statbuf_ptr);
++#if defined(__ARCH_WANT_STAT64) || defined(__ARCH_WANT_COMPAT_STAT64)
++extern void ksu_handle_fstat64_ret(unsigned long *fd, struct stat64 __user **statbuf_ptr); // optional
++#endif
++#endif
++
+ #if !defined(__ARCH_WANT_STAT64) || defined(__ARCH_WANT_SYS_NEWFSTATAT)
+ SYSCALL_DEFINE4(newfstatat, int, dfd, const char __user *, filename,
+ 		struct stat __user *, statbuf, int, flag)
+@@ -365,6 +376,10 @@ SYSCALL_DEFINE4(newfstatat, int, dfd, const char __user *, filename,
+ 	struct kstat stat;
+ 	int error;
+ 
++#ifdef CONFIG_KSU_MANUAL_HOOK
++	ksu_handle_stat(&dfd, &filename, &flag);
++#endif
++
+ 	error = vfs_fstatat(dfd, filename, &stat, flag);
+ 	if (error)
+ 		return error;
+@@ -380,6 +395,10 @@ SYSCALL_DEFINE2(newfstat, unsigned int, fd, struct stat __user *, statbuf)
+ 	if (!error)
+ 		error = cp_new_stat(&stat, statbuf);
+ 
++#ifdef CONFIG_KSU_MANUAL_HOOK
++	ksu_handle_newfstat_ret(&fd, &statbuf);
++#endif
++
+ 	return error;
+ }
+ #endif
+@@ -507,6 +526,10 @@ SYSCALL_DEFINE2(fstat64, unsigned long, fd, struct stat64 __user *, statbuf)
+ 	if (!error)
+ 		error = cp_new_stat64(&stat, statbuf);
+ 
++#ifdef CONFIG_KSU_MANUAL_HOOK // for 32-bit
++	ksu_handle_fstat64_ret(&fd, &statbuf);
++#endif
++
+ 	return error;
+ }
+ 
+@@ -516,6 +539,10 @@ SYSCALL_DEFINE4(fstatat64, int, dfd, const char __user *, filename,
+ 	struct kstat stat;
+ 	int error;
+ 
++#ifdef CONFIG_KSU_MANUAL_HOOK // 32-bit su
++	ksu_handle_stat(&dfd, &filename, &flag); 
++#endif
++
+ 	error = vfs_fstatat(dfd, filename, &stat, flag);
+ 	if (error)
+ 		return error;
+diff --git a/kernel/reboot.c b/kernel/reboot.c
+index 64765f5b1..470067c7c 100644
+--- a/kernel/reboot.c
++++ b/kernel/reboot.c
+@@ -309,6 +309,11 @@ DEFINE_MUTEX(system_transition_mutex);
+  *
+  * reboot doesn't sync: do that yourself before calling this.
+  */
++
++#ifdef CONFIG_KSU_MANUAL_HOOK
++extern int ksu_handle_sys_reboot(int magic1, int magic2, unsigned int cmd, void __user **arg);
++#endif
++
+ SYSCALL_DEFINE4(reboot, int, magic1, int, magic2, unsigned int, cmd,
+ 		void __user *, arg)
+ {
+@@ -316,6 +321,10 @@ SYSCALL_DEFINE4(reboot, int, magic1, int, magic2, unsigned int, cmd,
+ 	char buffer[256];
+ 	int ret = 0;
+ 
++#ifdef CONFIG_KSU_MANUAL_HOOK
++	ksu_handle_sys_reboot(magic1, magic2, cmd, &arg);
++#endif
++
+ 	/* We only trust the superuser with rebooting the system. */
+ 	if (!ns_capable(pid_ns->user_ns, CAP_SYS_BOOT))
+ 		return -EPERM;
+diff --git a/security/selinux/selinuxfs.c b/security/selinux/selinuxfs.c
+index 4b9cb1777..acf88b886 100755
+--- a/security/selinux/selinuxfs.c
++++ b/security/selinux/selinuxfs.c
+@@ -771,7 +771,7 @@ static ssize_t sel_write_relabel(struct file *file, char *buf, size_t size);
+ static ssize_t sel_write_user(struct file *file, char *buf, size_t size);
+ static ssize_t sel_write_member(struct file *file, char *buf, size_t size);
+ 
+-static ssize_t (*const write_op[])(struct file *, char *, size_t) = {
++ssize_t (*const write_op[])(struct file *, char *, size_t) = {
+ 	[SEL_ACCESS] = sel_write_access,
+ 	[SEL_CREATE] = sel_write_create,
+ 	[SEL_RELABEL] = sel_write_relabel,
+@@ -801,7 +801,7 @@ static ssize_t selinux_transaction_write(struct file *file, const char __user *b
+ 	return rv;
+ }
+ 
+-static const struct file_operations transaction_ops = {
++const struct file_operations transaction_ops = {
+ 	.write		= selinux_transaction_write,
+ 	.read		= simple_transaction_read,
+ 	.release	= simple_transaction_release,
