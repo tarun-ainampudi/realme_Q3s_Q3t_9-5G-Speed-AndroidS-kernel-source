@@ -15,7 +15,7 @@ if [ ! -d "$SOURCE_DIR/aarch64-linux-android-4.9" ]; then
 fi
 
 DEFCONFIG="vendor/lahaina-qgki_defconfig"
-CONFIG_ADDON="CONFIG_SECTION_MISMATCH_WARN_ONLY=y"
+CONFIG_ADDON="CONFIG_SECTION_MISMATCH_WARN_ONLY=y LD=ld.lld LLVM=1 LLVM_IAS=1"
 UAPI_CFLAGS="-std=c90 -Wall -Werror=implicit-function-declaration -D_GNU_SOURCE -D_POSIX_C_SOURCE=199309L"
-make V=1 O=out ARCH=arm64 CC=clang HOSTCC=clang CLANG_TRIPLE=aarch64-linux-gnu- CROSS_COMPILE=${CROSS_COMPILE} ${DEFCONFIG}
+make V=1 O=out ARCH=arm64 CC=clang HOSTCC=clang CLANG_TRIPLE=aarch64-linux-gnu- CROSS_COMPILE=${CROSS_COMPILE} ${DEFCONFIG} ${CONFIG_ADDON}
 make V=1 ARCH=arm64 CROSS_COMPILE=${CROSS_COMPILE} UAPI_CFLAGS="${UAPI_CFLAGS}" O=out CC=clang HOSTCC=clang CLANG_TRIPLE=aarch64-linux-gnu- ${CONFIG_ADDON} -j$(nproc)
