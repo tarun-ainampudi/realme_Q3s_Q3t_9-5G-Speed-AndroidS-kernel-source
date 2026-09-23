@@ -149,3 +149,7 @@ x509.genkey
 
 # vendor device tree directories
 arch/arm/boot/dts/vendor
+
+#KSU
+KernelSU/
+drivers/kernelsu
