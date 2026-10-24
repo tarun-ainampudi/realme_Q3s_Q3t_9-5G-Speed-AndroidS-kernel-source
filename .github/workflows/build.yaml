@@ -51,11 +51,13 @@ jobs:
 
           export PATH="$CLANG_DIR/bin:$PATH"
           export CROSS_COMPILE="$GCC_DIR/bin/aarch64-linux-android-"
+          export CONFIG_ADDON="CONFIG_SECTION_MISMATCH_WARN_ONLY=y"
 
           make V=1 O=out ARCH=arm64 \
             CC=clang \
             CLANG_TRIPLE=aarch64-linux-gnu- \
             CROSS_COMPILE="$CROSS_COMPILE" \
+            ${CONFIG_ADDON} \
             LD=ld.lld \
             LLVM=1 LLVM_IAS=1 \
             "$DEFCONFIG"
@@ -66,11 +68,14 @@ jobs:
 
           export PATH="$CLANG_DIR/bin:$PATH"
           export CROSS_COMPILE="$GCC_DIR/bin/aarch64-linux-android-"
+          export CONFIG_ADDON="CONFIG_SECTION_MISMATCH_WARN_ONLY=y"
+          export UAPI_CFLAGS="-std=c90 -Wall -Werror=implicit-function-declaration -D_GNU_SOURCE -D_POSIX_C_SOURCE=199309L"
 
           make V=1 O=out ARCH=arm64 \
             CC=clang \
             CLANG_TRIPLE=aarch64-linux-gnu- \
             CROSS_COMPILE="$CROSS_COMPILE" \
+            UAPI_CFLAGS="${UAPI_CFLAGS}" ${CONFIG_ADDON} \
             LD=ld.lld \
             LLVM=1 LLVM_IAS=1 \
             -j"$(nproc)"
