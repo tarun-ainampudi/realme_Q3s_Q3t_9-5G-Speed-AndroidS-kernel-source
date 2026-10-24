@@ -1,0 +1,85 @@
+name: Build Ice Kernel
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    env:
+      SOURCE_DIR: ${{ github.workspace }}
+      CLANG_DIR: ${{ github.workspace }}/../clang-r383902b1
+      GCC_DIR: ${{ github.workspace }}/../llvm-r383902b
+      DEFCONFIG: vendor/lahaina-qgki_defconfig
+
+    steps:
+      - name: Checkout kernel source
+        uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            bc bison build-essential curl flex \
+            libssl-dev libelf-dev python3 \
+            python-is-python3 cpio
+
+      - name: Download toolchains
+        run: |
+          set -e
+
+          mkdir -p "$CLANG_DIR" "$GCC_DIR"
+
+          curl -fL --retry 3 \
+            "https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/refs/heads/android11-qpr2-release/clang-r383902b1.tar.gz" \
+            -o clang.tar.gz
+
+          tar -xzf clang.tar.gz -C "$CLANG_DIR"
+          rm clang.tar.gz
+
+          curl -fL --retry 3 \
+            "https://android.googlesource.com/platform/prebuilts/gcc/linux-x86/aarch64/aarch64-linux-android-4.9/+archive/refs/heads/llvm-r383902b.tar.gz" \
+            -o gcc.tar.gz
+
+          tar -xzf gcc.tar.gz -C "$GCC_DIR"
+          rm gcc.tar.gz
+
+      - name: Configure kernel
+        run: |
+          set -e
+
+          export PATH="$CLANG_DIR/bin:$PATH"
+          export CROSS_COMPILE="$GCC_DIR/bin/aarch64-linux-android-"
+
+          make V=1 O=out ARCH=arm64 \
+            CC=clang \
+            CLANG_TRIPLE=aarch64-linux-gnu- \
+            CROSS_COMPILE="$CROSS_COMPILE" \
+            LD=ld.lld \
+            LLVM=1 LLVM_IAS=1 \
+            "$DEFCONFIG"
+
+      - name: Build kernel
+        run: |
+          set -e
+
+          export PATH="$CLANG_DIR/bin:$PATH"
+          export CROSS_COMPILE="$GCC_DIR/bin/aarch64-linux-android-"
+
+          make V=1 O=out ARCH=arm64 \
+            CC=clang \
+            CLANG_TRIPLE=aarch64-linux-gnu- \
+            CROSS_COMPILE="$CROSS_COMPILE" \
+            LD=ld.lld \
+            LLVM=1 LLVM_IAS=1 \
+            -j"$(nproc)"
+
+      - name: Upload kernel artifacts
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: RMX3461-kernel
+          path: |
+            out/arch/arm64/boot/Image
+          if-no-files-found: warn
